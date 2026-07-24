@@ -1,0 +1,9 @@
+.git/
+.gradle/
+build/
+*.db
+*.db-journal
+.idea/
+*.iml
+out/
+README.md
