@@ -69,6 +69,9 @@ fun Application.module() {
     val connectionService = ConnectionService(deviceService, webSocketService)
 
     routing {
+        get("/") {
+            call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+        }
         authRoutes()
         deviceRoutes()
         connectionRoutes(connectionService)
