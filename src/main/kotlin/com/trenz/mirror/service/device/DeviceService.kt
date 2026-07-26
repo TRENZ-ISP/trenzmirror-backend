@@ -50,9 +50,26 @@ class DeviceService {
                         isOnline = row[DevicesTable.isOnline],
                         isPaired = row[DevicesTable.isPaired],
                         pairedAt = row[DevicesTable.pairedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
-                        lastSeenAt = row[DevicesTable.lastSeenAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000)
+                        lastSeenAt = row[DevicesTable.lastSeenAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
+                        latitude = row[DevicesTable.latitude],
+                        longitude = row[DevicesTable.longitude],
+                        locationUpdatedAt = row[DevicesTable.locationUpdatedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000)
                     )
                 }
+        }
+    }
+
+    /** [userId] must own [deviceId]; a device can only report its own location, never another's. */
+    fun updateLocation(userId: String, deviceId: String, latitude: Double, longitude: Double) {
+        if (!isOwnedBy(deviceId, userId)) {
+            throw IllegalArgumentException("deviceId does not belong to the authenticated user")
+        }
+        transaction {
+            DevicesTable.update({ DevicesTable.id eq UUID.fromString(deviceId) }) {
+                it[DevicesTable.latitude] = latitude
+                it[DevicesTable.longitude] = longitude
+                it[locationUpdatedAt] = LocalDateTime.now()
+            }
         }
     }
 

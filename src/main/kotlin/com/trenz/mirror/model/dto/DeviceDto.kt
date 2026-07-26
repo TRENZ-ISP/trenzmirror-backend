@@ -12,5 +12,8 @@ data class DeviceDto(
     val isOnline: Boolean = false,
     val isPaired: Boolean = false,
     val pairedAt: Long? = null,
-    val lastSeenAt: Long? = null
+    val lastSeenAt: Long? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val locationUpdatedAt: Long? = null
 )

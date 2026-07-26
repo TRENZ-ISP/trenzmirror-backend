@@ -48,6 +48,20 @@ fun Route.deviceRoutes() {
                 }
             }
 
+            post("/location") {
+                val principal = call.principal<JWTPrincipal>()
+                val userId = principal?.payload?.getClaim("userId")?.asString()
+                    ?: return@post call.respond(HttpStatusCode.Unauthorized)
+
+                val request = call.receive<UpdateLocationRequest>()
+                try {
+                    deviceService.updateLocation(userId, request.deviceId, request.latitude, request.longitude)
+                    call.respond(HttpStatusCode.OK, ApiResponse.Success(Unit))
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, ApiResponse.Error("LOCATION_UPDATE_FAILED", e.message ?: "Unknown error"))
+                }
+            }
+
             delete("/{deviceId}") {
                 val principal = call.principal<JWTPrincipal>()
                 val userId = principal?.payload?.getClaim("userId")?.asString()
