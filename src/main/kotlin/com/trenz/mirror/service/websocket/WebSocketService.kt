@@ -4,6 +4,11 @@ import com.trenz.mirror.model.dto.WebSocketMessage
 import com.trenz.mirror.service.device.DeviceService
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -18,11 +23,24 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class WebSocketService(private val deviceService: DeviceService) {
 
+    // Own scope for the grace-period offline check below - deliberately not tied to any single
+    // request's lifecycle, since it needs to keep running after the WebSocket route handler that
+    // triggered it has already returned.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val connections = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
 
     // sessionId -> (deviceA, deviceB). Order doesn't matter; forwardToPeer() figures out
     // which side the sender is and sends to the other one.
     private val sessionParticipants = ConcurrentHashMap<String, Pair<String, String>>()
+
+    private companion object {
+        // Grace period between a socket closing and the device actually being marked offline.
+        // Covers the extremely common case of a transient disconnect (ping timeout, brief
+        // network handoff) followed by the client's own automatic reconnect - without this, every
+        // one of those normal blips instantly and incorrectly flipped presence to offline.
+        const val OFFLINE_GRACE_PERIOD_MS = 30_000L
+    }
 
     fun registerConnection(deviceId: String, session: DefaultWebSocketServerSession) {
         connections[deviceId] = session
@@ -31,11 +49,20 @@ class WebSocketService(private val deviceService: DeviceService) {
 
     fun unregisterConnection(deviceId: String) {
         connections.remove(deviceId)
-        deviceService.updateDeviceStatus(deviceId, isOnline = false)
         // Clean up any sessions this device was part of so we don't leak entries
         // or keep trying to forward frames into the void.
         sessionParticipants.entries.removeIf { (_, pair) ->
             pair.first == deviceId || pair.second == deviceId
+        }
+
+        // Don't mark offline immediately - wait to see if this was just a brief drop that the
+        // client's own reconnect logic resolves on its own within the grace period. Only commit
+        // to "offline" if the device genuinely hasn't reconnected by the time this fires.
+        scope.launch {
+            delay(OFFLINE_GRACE_PERIOD_MS)
+            if (!connections.containsKey(deviceId)) {
+                deviceService.updateDeviceStatus(deviceId, isOnline = false)
+            }
         }
     }
 
