@@ -62,6 +62,40 @@ fun Route.deviceRoutes() {
                 }
             }
 
+            get("/{deviceId}") {
+                val principal = call.principal<JWTPrincipal>()
+                val userId = principal?.payload?.getClaim("userId")?.asString()
+                    ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+                val deviceId = call.parameters["deviceId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "Device ID required")
+
+                if (!deviceService.isOwnedBy(deviceId, userId)) {
+                    return@get call.respond(HttpStatusCode.Forbidden, ApiResponse.Error("NOT_YOUR_DEVICE", "This device does not belong to you"))
+                }
+
+                val device = deviceService.getDeviceById(deviceId, includePairingCode = true)
+                    ?: return@get call.respond(HttpStatusCode.NotFound, ApiResponse.Error("DEVICE_NOT_FOUND", "Device not found"))
+
+                call.respond(HttpStatusCode.OK, ApiResponse.Success(device))
+            }
+
+            post("/{deviceId}/regenerate-code") {
+                val principal = call.principal<JWTPrincipal>()
+                val userId = principal?.payload?.getClaim("userId")?.asString()
+                    ?: return@post call.respond(HttpStatusCode.Unauthorized)
+
+                val deviceId = call.parameters["deviceId"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, "Device ID required")
+
+                try {
+                    val device = deviceService.regeneratePairingCode(userId, deviceId)
+                    call.respond(HttpStatusCode.OK, ApiResponse.Success(device))
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, ApiResponse.Error("REGENERATE_FAILED", e.message ?: "Unknown error"))
+                }
+            }
+
             delete("/{deviceId}") {
                 val principal = call.principal<JWTPrincipal>()
                 val userId = principal?.payload?.getClaim("userId")?.asString()

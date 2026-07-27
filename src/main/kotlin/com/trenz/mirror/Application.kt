@@ -7,10 +7,12 @@ import com.trenz.mirror.config.configureWebSockets
 import com.trenz.mirror.routes.auth.authRoutes
 import com.trenz.mirror.routes.connection.connectionRoutes
 import com.trenz.mirror.routes.device.deviceRoutes
+import com.trenz.mirror.routes.pairing.pairingRoutes
 import com.trenz.mirror.routes.websocket.webSocketRoutes
 import com.trenz.mirror.service.auth.JwtService
 import com.trenz.mirror.service.device.DeviceService
 import com.trenz.mirror.service.connection.ConnectionService
+import com.trenz.mirror.service.pairing.PairingService
 import com.trenz.mirror.service.websocket.WebSocketService
 import io.ktor.server.application.*
 import io.ktor.server.plugins.callloging.*
@@ -67,6 +69,7 @@ fun Application.module() {
     val jwtService = JwtService(environment)
     val webSocketService = WebSocketService(deviceService)
     val connectionService = ConnectionService(deviceService, webSocketService)
+    val pairingService = PairingService(deviceService, webSocketService)
 
     routing {
         get("/") {
@@ -75,6 +78,7 @@ fun Application.module() {
         authRoutes()
         deviceRoutes()
         connectionRoutes(connectionService)
+        pairingRoutes(pairingService)
         webSocketRoutes(webSocketService, jwtService, deviceService)
     }
 }

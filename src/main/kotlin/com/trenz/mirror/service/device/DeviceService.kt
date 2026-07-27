@@ -13,6 +13,8 @@ class DeviceService {
     fun registerDevice(userId: String, request: RegisterDeviceRequest): DeviceDto {
         return transaction {
             val deviceId = UUID.randomUUID().toString()
+            val code = generateUniquePairingCode()
+            val now = LocalDateTime.now()
             DevicesTable.insert {
                 it[DevicesTable.id] = UUID.fromString(deviceId)
                 it[DevicesTable.userId] = UUID.fromString(userId)
@@ -21,8 +23,11 @@ class DeviceService {
                 it[osVersion] = request.osVersion
                 it[isOnline] = true
                 it[isPaired] = false
-                it[createdAt] = LocalDateTime.now()
-                it[lastSeenAt] = LocalDateTime.now()
+                it[createdAt] = now
+                it[lastSeenAt] = now
+                it[pairingCode] = code
+                it[pairingCodeCreatedAt] = now
+                it[pairingCodeExpiresAt] = now.plusDays(30)
             }
 
             DeviceDto(
@@ -32,30 +37,82 @@ class DeviceService {
                 deviceModel = request.deviceModel,
                 osVersion = request.osVersion,
                 isOnline = true,
-                isPaired = false
+                isPaired = false,
+                pairingCode = code,
+                pairingCodeExpiresAt = now.plusDays(30).toEpochSecond(java.time.ZoneOffset.UTC) * 1000
             )
         }
     }
 
+    /** Generates a pairing code, retrying on the astronomically unlikely event of a collision. */
+    private fun generateUniquePairingCode(): String {
+        repeat(10) {
+            val candidate = com.trenz.mirror.util.PairingCodeGenerator.generate()
+            val exists = DevicesTable.select { DevicesTable.pairingCode eq candidate }.count() > 0
+            if (!exists) return candidate
+        }
+        throw IllegalStateException("Could not generate a unique pairing code")
+    }
+
+    /** Regenerates [deviceId]'s pairing code - invalidates the old one immediately. [userId] must own the device. */
+    fun regeneratePairingCode(userId: String, deviceId: String): DeviceDto {
+        if (!isOwnedBy(deviceId, userId)) {
+            throw IllegalArgumentException("deviceId does not belong to the authenticated user")
+        }
+        return transaction {
+            val code = generateUniquePairingCode()
+            val now = LocalDateTime.now()
+            DevicesTable.update({ DevicesTable.id eq UUID.fromString(deviceId) }) {
+                it[pairingCode] = code
+                it[pairingCodeCreatedAt] = now
+                it[pairingCodeExpiresAt] = now.plusDays(30)
+            }
+            getDeviceById(deviceId, includePairingCode = true)
+                ?: throw IllegalStateException("Device disappeared mid-update")
+        }
+    }
+
+    /** Looks up a device by its current, non-expired pairing code. Returns null if not found or expired. */
+    fun findByPairingCode(code: String): DeviceDto? {
+        return transaction {
+            val row = DevicesTable.select { DevicesTable.pairingCode eq code }.singleOrNull() ?: return@transaction null
+            val expiresAt = row[DevicesTable.pairingCodeExpiresAt] ?: return@transaction null
+            if (expiresAt.isBefore(LocalDateTime.now())) return@transaction null
+            rowToDto(row, includePairingCode = false)
+        }
+    }
+
+    fun getDeviceById(deviceId: String, includePairingCode: Boolean): DeviceDto? {
+        return transaction {
+            val row = DevicesTable.select { DevicesTable.id eq UUID.fromString(deviceId) }.singleOrNull()
+                ?: return@transaction null
+            rowToDto(row, includePairingCode)
+        }
+    }
+
+    private fun rowToDto(row: ResultRow, includePairingCode: Boolean): DeviceDto = DeviceDto(
+        id = row[DevicesTable.id].toString(),
+        userId = row[DevicesTable.userId].toString(),
+        name = row[DevicesTable.name],
+        deviceModel = row[DevicesTable.deviceModel],
+        osVersion = row[DevicesTable.osVersion],
+        isOnline = row[DevicesTable.isOnline],
+        isPaired = row[DevicesTable.isPaired],
+        pairedAt = row[DevicesTable.pairedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
+        lastSeenAt = row[DevicesTable.lastSeenAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
+        latitude = row[DevicesTable.latitude],
+        longitude = row[DevicesTable.longitude],
+        locationUpdatedAt = row[DevicesTable.locationUpdatedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
+        pairingCode = if (includePairingCode) row[DevicesTable.pairingCode] else null,
+        pairingCodeExpiresAt = if (includePairingCode)
+            row[DevicesTable.pairingCodeExpiresAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000)
+        else null
+    )
+
     fun getDevices(userId: String): List<DeviceDto> {
         return transaction {
             DevicesTable.select { DevicesTable.userId eq UUID.fromString(userId) }
-                .map { row ->
-                    DeviceDto(
-                        id = row[DevicesTable.id].toString(),
-                        userId = row[DevicesTable.userId].toString(),
-                        name = row[DevicesTable.name],
-                        deviceModel = row[DevicesTable.deviceModel],
-                        osVersion = row[DevicesTable.osVersion],
-                        isOnline = row[DevicesTable.isOnline],
-                        isPaired = row[DevicesTable.isPaired],
-                        pairedAt = row[DevicesTable.pairedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
-                        lastSeenAt = row[DevicesTable.lastSeenAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
-                        latitude = row[DevicesTable.latitude],
-                        longitude = row[DevicesTable.longitude],
-                        locationUpdatedAt = row[DevicesTable.locationUpdatedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000)
-                    )
-                }
+                .map { row -> rowToDto(row, includePairingCode = true) }
         }
     }
 

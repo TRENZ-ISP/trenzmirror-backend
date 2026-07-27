@@ -16,11 +16,15 @@ fun Application.configureDatabase() {
     )
 
     transaction {
-        SchemaUtils.create(
+        // createMissingTablesAndColumns (not plain create) - now that Railway has a persistent
+        // volume with real user data, we need ALTER TABLE for new columns on existing tables
+        // (like DevicesTable's new pairing fields), not just CREATE TABLE for brand-new ones.
+        SchemaUtils.createMissingTablesAndColumns(
             UsersTable,
             DevicesTable,
             SessionsTable,
             PairRequestsTable,
+            PairedDevicesTable,
             ConnectionRequestsTable,
             RefreshTokensTable
         )

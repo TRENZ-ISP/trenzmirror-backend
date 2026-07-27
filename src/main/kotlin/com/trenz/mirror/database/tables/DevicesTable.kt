@@ -17,4 +17,7 @@ object DevicesTable : UUIDTable("devices") {
     val latitude = double("latitude").nullable()
     val longitude = double("longitude").nullable()
     val locationUpdatedAt = datetime("location_updated_at").nullable()
+    val pairingCode = varchar("pairing_code", 16).uniqueIndex().nullable()
+    val pairingCodeCreatedAt = datetime("pairing_code_created_at").nullable()
+    val pairingCodeExpiresAt = datetime("pairing_code_expires_at").nullable()
 }

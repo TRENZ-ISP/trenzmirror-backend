@@ -36,6 +36,28 @@ sealed class WebSocketMessage {
     ) : WebSocketMessage()
 
     @Serializable
+    @SerialName("pair_request")
+    data class PairRequest(
+        val requestId: String,
+        val requesterDeviceId: String,
+        val requesterDeviceName: String
+    ) : WebSocketMessage()
+
+    @Serializable
+    @SerialName("pair_accepted")
+    data class PairAccepted(
+        val requestId: String,
+        val pairedDeviceId: String,
+        val pairedDeviceName: String
+    ) : WebSocketMessage()
+
+    @Serializable
+    @SerialName("pair_rejected")
+    data class PairRejected(
+        val requestId: String
+    ) : WebSocketMessage()
+
+    @Serializable
     @SerialName("screen_frame")
     data class ScreenFrame(
         val sessionId: String,
