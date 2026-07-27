@@ -20,4 +20,6 @@ object DevicesTable : UUIDTable("devices") {
     val pairingCode = varchar("pairing_code", 16).uniqueIndex().nullable()
     val pairingCodeCreatedAt = datetime("pairing_code_created_at").nullable()
     val pairingCodeExpiresAt = datetime("pairing_code_expires_at").nullable()
+    val batteryLevel = integer("battery_level").nullable()
+    val networkQuality = varchar("network_quality", 20).nullable()
 }

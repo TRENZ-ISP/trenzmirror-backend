@@ -106,7 +106,9 @@ class DeviceService {
         pairingCode = if (includePairingCode) row[DevicesTable.pairingCode] else null,
         pairingCodeExpiresAt = if (includePairingCode)
             row[DevicesTable.pairingCodeExpiresAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000)
-        else null
+        else null,
+        batteryLevel = row[DevicesTable.batteryLevel],
+        networkQuality = row[DevicesTable.networkQuality]
     )
 
     fun getDevices(userId: String): List<DeviceDto> {
@@ -117,7 +119,14 @@ class DeviceService {
     }
 
     /** [userId] must own [deviceId]; a device can only report its own location, never another's. */
-    fun updateLocation(userId: String, deviceId: String, latitude: Double, longitude: Double) {
+    fun updateLocation(
+        userId: String,
+        deviceId: String,
+        latitude: Double,
+        longitude: Double,
+        batteryLevel: Int? = null,
+        networkQuality: String? = null
+    ) {
         if (!isOwnedBy(deviceId, userId)) {
             throw IllegalArgumentException("deviceId does not belong to the authenticated user")
         }
@@ -126,6 +135,8 @@ class DeviceService {
                 it[DevicesTable.latitude] = latitude
                 it[DevicesTable.longitude] = longitude
                 it[locationUpdatedAt] = LocalDateTime.now()
+                if (batteryLevel != null) it[DevicesTable.batteryLevel] = batteryLevel
+                if (networkQuality != null) it[DevicesTable.networkQuality] = networkQuality
             }
         }
     }

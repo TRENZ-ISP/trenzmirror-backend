@@ -55,7 +55,10 @@ fun Route.deviceRoutes() {
 
                 val request = call.receive<UpdateLocationRequest>()
                 try {
-                    deviceService.updateLocation(userId, request.deviceId, request.latitude, request.longitude)
+                    deviceService.updateLocation(
+                        userId, request.deviceId, request.latitude, request.longitude,
+                        request.batteryLevel, request.networkQuality
+                    )
                     call.respond(HttpStatusCode.OK, ApiResponse.Success(Unit))
                 } catch (e: Exception) {
                     call.respond(HttpStatusCode.BadRequest, ApiResponse.Error("LOCATION_UPDATE_FAILED", e.message ?: "Unknown error"))

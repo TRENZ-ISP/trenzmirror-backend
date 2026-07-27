@@ -22,5 +22,7 @@ data class DeviceDto(
     // pair with it a second time without the owner's approval, defeating the whole point of
     // requiring an explicit accept step.
     val pairingCode: String? = null,
-    val pairingCodeExpiresAt: Long? = null
+    val pairingCodeExpiresAt: Long? = null,
+    val batteryLevel: Int? = null,
+    val networkQuality: String? = null
 )

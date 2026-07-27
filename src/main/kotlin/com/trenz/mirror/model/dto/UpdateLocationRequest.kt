@@ -6,5 +6,7 @@ import kotlinx.serialization.Serializable
 data class UpdateLocationRequest(
     val deviceId: String,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val batteryLevel: Int? = null,
+    val networkQuality: String? = null
 )
