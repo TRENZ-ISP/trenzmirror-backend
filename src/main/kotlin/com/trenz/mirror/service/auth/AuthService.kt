@@ -39,8 +39,14 @@ class AuthService(private val jwtService: JwtService) {
 
     fun login(request: LoginRequest): LoginResponse {
         return transaction {
-            val userRow = UsersTable.select { UsersTable.email eq request.email }.singleOrNull()
-                ?: throw IllegalArgumentException("Invalid credentials")
+            val identifier = request.identifier.trim()
+            // Accepts either the account's username or email in the same field, matched
+            // case-insensitively - firstOrNull() rather than singleOrNull() since username
+            // uniqueness isn't enforced at the database level, only email is guaranteed unique.
+            val userRow = UsersTable.select {
+                (UsersTable.email.lowerCase() eq identifier.lowercase()) or
+                (UsersTable.username.lowerCase() eq identifier.lowercase())
+            }.firstOrNull() ?: throw IllegalArgumentException("Invalid credentials")
 
             val passwordHash = userRow[UsersTable.passwordHash]
             if (!BCrypt.checkpw(request.password, passwordHash)) {
@@ -48,7 +54,8 @@ class AuthService(private val jwtService: JwtService) {
             }
 
             val userId = userRow[UsersTable.id].toString()
-            val accessToken = jwtService.generateAccessToken(userId, request.email)
+            val userEmail = userRow[UsersTable.email]
+            val accessToken = jwtService.generateAccessToken(userId, userEmail)
             val refreshToken = jwtService.generateRefreshToken(userId)
             val expiresAt = System.currentTimeMillis() + 15 * 60 * 1000
 
