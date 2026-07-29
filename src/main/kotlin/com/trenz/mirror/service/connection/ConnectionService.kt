@@ -22,17 +22,47 @@ class ConnectionService(
             throw ConnectionAuthorizationException("fromDeviceId does not belong to the authenticated user")
         }
 
+        val alreadyPaired = transaction {
+            PairedDevicesTable.select {
+                (PairedDevicesTable.ownerDeviceId eq UUID.fromString(request.fromDeviceId)) and
+                (PairedDevicesTable.pairedDeviceId eq UUID.fromString(request.targetDeviceId)) and
+                (PairedDevicesTable.status eq "ACTIVE")
+            }.count() > 0
+        }
+
         val dto = transaction {
             val requestId = UUID.randomUUID().toString()
             val fromDevice = DevicesTable.select { DevicesTable.id eq UUID.fromString(request.fromDeviceId) }
                 .singleOrNull() ?: throw IllegalArgumentException("Device not found")
 
+            // Trusted (already permanently paired) devices skip the manual accept/reject step
+            // entirely - the request is recorded as immediately ACCEPTED rather than PENDING, so
+            // it never shows up for the other side to approve. The required screen-sharing
+            // notification still appears either way - this only removes the repeated
+            // "do you want to connect" prompt between two devices that already trust each other.
+            val status = if (alreadyPaired) "ACCEPTED" else "PENDING"
+
             ConnectionRequestsTable.insert {
                 it[ConnectionRequestsTable.id] = UUID.fromString(requestId)
                 it[ConnectionRequestsTable.fromDeviceId] = UUID.fromString(request.fromDeviceId)
                 it[ConnectionRequestsTable.toDeviceId] = UUID.fromString(request.targetDeviceId)
-                it[status] = "PENDING"
+                it[ConnectionRequestsTable.status] = status
                 it[createdAt] = LocalDateTime.now()
+                if (alreadyPaired) it[respondedAt] = LocalDateTime.now()
+            }
+
+            var sessionId: String? = null
+            if (alreadyPaired) {
+                val newSessionId = UUID.randomUUID().toString()
+                sessionId = newSessionId
+                SessionsTable.insert {
+                    it[SessionsTable.id] = UUID.fromString(newSessionId)
+                    it[controllerDeviceId] = UUID.fromString(request.fromDeviceId)
+                    it[controlledDeviceId] = UUID.fromString(request.targetDeviceId)
+                    it[SessionsTable.status] = "ACTIVE"
+                    it[startedAt] = LocalDateTime.now()
+                    it[createdAt] = LocalDateTime.now()
+                }
             }
 
             ConnectionRequestDto(
@@ -40,22 +70,32 @@ class ConnectionService(
                 fromDeviceId = request.fromDeviceId,
                 fromDeviceName = fromDevice[DevicesTable.name],
                 toDeviceId = request.targetDeviceId,
-                status = "PENDING",
-                createdAt = System.currentTimeMillis()
+                status = status,
+                createdAt = System.currentTimeMillis(),
+                sessionId = sessionId
             )
         }
 
-        // Realtime push so the target device doesn't have to poll /pending. Best-effort:
-        // if the target isn't currently connected it'll still see the request next time it
-        // calls GET /connections/pending.
-        webSocketService.sendToDevice(
-            request.targetDeviceId,
-            WebSocketMessage.ConnectionRequest(
-                requestId = dto.id,
-                fromDeviceId = dto.fromDeviceId,
-                fromDeviceName = dto.fromDeviceName
+        if (alreadyPaired && dto.sessionId != null) {
+            // Skip straight to "session started" for both sides - no pending-request push needed.
+            webSocketService.registerSession(dto.sessionId, request.fromDeviceId, request.targetDeviceId)
+            webSocketService.sendToDevice(
+                request.targetDeviceId,
+                WebSocketMessage.ConnectionAccepted(requestId = dto.id, sessionId = dto.sessionId)
             )
-        )
+        } else {
+            // Realtime push so the target device doesn't have to poll /pending. Best-effort:
+            // if the target isn't currently connected it'll still see the request next time it
+            // calls GET /connections/pending.
+            webSocketService.sendToDevice(
+                request.targetDeviceId,
+                WebSocketMessage.ConnectionRequest(
+                    requestId = dto.id,
+                    fromDeviceId = dto.fromDeviceId,
+                    fromDeviceName = dto.fromDeviceName
+                )
+            )
+        }
 
         return dto
     }
