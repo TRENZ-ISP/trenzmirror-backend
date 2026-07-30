@@ -88,6 +88,34 @@ class PairingService(
         }
 
         val requesterDeviceId = row[PairRequestsTable.requesterDeviceId].toString()
+
+        // Idempotency guard: a double-tap or retried request for the same pairing request
+        // previously created a brand new session every single time, since nothing checked
+        // whether this request had already been accepted/rejected. Real evidence from tonight's
+        // logs showed one tap producing five separate sessions and duplicate history entries.
+        val existingStatus = row[PairRequestsTable.status]
+        if (existingStatus == "ACCEPTED" || existingStatus == "REJECTED") {
+            val existingSessionId = if (existingStatus == "ACCEPTED") {
+                transaction {
+                    SessionsTable.select {
+                        (SessionsTable.controllerDeviceId eq UUID.fromString(requesterDeviceId)) and
+                        (SessionsTable.controlledDeviceId eq UUID.fromString(targetDeviceId))
+                    }.orderBy(SessionsTable.createdAt, SortOrder.DESC).limit(1).singleOrNull()
+                        ?.get(SessionsTable.id)?.toString()
+                }
+            } else null
+
+            return PairRequestDto(
+                id = request.requestId,
+                requesterDeviceId = requesterDeviceId,
+                requesterDeviceName = "",
+                targetDeviceId = targetDeviceId,
+                status = existingStatus,
+                createdAt = row[PairRequestsTable.createdAt].toEpochSecond(java.time.ZoneOffset.UTC) * 1000,
+                sessionId = existingSessionId
+            )
+        }
+
         val newStatus = if (request.accept) "ACCEPTED" else "REJECTED"
 
         var newSessionId: String? = null
