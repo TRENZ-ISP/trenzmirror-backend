@@ -90,6 +90,8 @@ class PairingService(
         val requesterDeviceId = row[PairRequestsTable.requesterDeviceId].toString()
         val newStatus = if (request.accept) "ACCEPTED" else "REJECTED"
 
+        var newSessionId: String? = null
+
         transaction {
             PairRequestsTable.update({ PairRequestsTable.id eq UUID.fromString(request.requestId) }) {
                 it[status] = newStatus
@@ -119,18 +121,33 @@ class PairingService(
                     it[isPaired] = true
                     it[pairedAt] = now
                 }
+
+                // Accepting a pairing request now goes straight into a live session - no
+                // separate "tap View" step needed the very first time two devices connect.
+                val sessionId = UUID.randomUUID().toString()
+                newSessionId = sessionId
+                SessionsTable.insert {
+                    it[SessionsTable.id] = UUID.fromString(sessionId)
+                    it[controllerDeviceId] = UUID.fromString(requesterDeviceId)
+                    it[controlledDeviceId] = UUID.fromString(targetDeviceId)
+                    it[SessionsTable.status] = "ACTIVE"
+                    it[startedAt] = now
+                    it[createdAt] = now
+                }
             }
         }
 
         val targetDevice = deviceService.getDeviceById(targetDeviceId, includePairingCode = false)
 
         if (request.accept) {
+            newSessionId?.let { sid -> webSocketService.registerSession(sid, requesterDeviceId, targetDeviceId) }
             webSocketService.sendToDevice(
                 requesterDeviceId,
                 WebSocketMessage.PairAccepted(
                     requestId = request.requestId,
                     pairedDeviceId = targetDeviceId,
-                    pairedDeviceName = targetDevice?.name ?: ""
+                    pairedDeviceName = targetDevice?.name ?: "",
+                    sessionId = newSessionId
                 )
             )
         } else {
@@ -146,7 +163,8 @@ class PairingService(
             requesterDeviceName = "",
             targetDeviceId = targetDeviceId,
             status = newStatus,
-            createdAt = row[PairRequestsTable.createdAt].toEpochSecond(java.time.ZoneOffset.UTC) * 1000
+            createdAt = row[PairRequestsTable.createdAt].toEpochSecond(java.time.ZoneOffset.UTC) * 1000,
+            sessionId = newSessionId
         )
     }
 

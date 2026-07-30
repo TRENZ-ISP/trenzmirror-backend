@@ -48,7 +48,8 @@ sealed class WebSocketMessage {
     data class PairAccepted(
         val requestId: String,
         val pairedDeviceId: String,
-        val pairedDeviceName: String
+        val pairedDeviceName: String,
+        val sessionId: String? = null
     ) : WebSocketMessage()
 
     @Serializable

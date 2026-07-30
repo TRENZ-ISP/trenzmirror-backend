@@ -9,5 +9,6 @@ data class PairRequestDto(
     val requesterDeviceName: String,
     val targetDeviceId: String,
     val status: String,
-    val createdAt: Long
+    val createdAt: Long,
+    val sessionId: String? = null
 )
