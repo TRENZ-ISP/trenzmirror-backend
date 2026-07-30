@@ -218,4 +218,37 @@ class ConnectionService(
         )
         webSocketService.endSession(sessionId)
     }
+
+    fun getRecentSessions(userId: String, deviceId: String, limit: Int = 15): List<SessionSummaryDto> {
+        if (!deviceService.isOwnedBy(deviceId, userId)) {
+            throw ConnectionAuthorizationException("deviceId does not belong to the authenticated user")
+        }
+
+        return transaction {
+            val deviceUuid = UUID.fromString(deviceId)
+            SessionsTable
+                .select {
+                    (SessionsTable.controllerDeviceId eq deviceUuid) or
+                    (SessionsTable.controlledDeviceId eq deviceUuid)
+                }
+                .orderBy(SessionsTable.createdAt, SortOrder.DESC)
+                .limit(limit)
+                .mapNotNull { row ->
+                    val isController = row[SessionsTable.controllerDeviceId].value == deviceUuid
+                    val otherId = if (isController) row[SessionsTable.controlledDeviceId] else row[SessionsTable.controllerDeviceId]
+                    val otherDeviceRow = DevicesTable.select { DevicesTable.id eq otherId }.singleOrNull()
+                        ?: return@mapNotNull null // other device may have been removed since
+
+                    SessionSummaryDto(
+                        sessionId = row[SessionsTable.id].toString(),
+                        otherDeviceId = otherId.toString(),
+                        otherDeviceName = otherDeviceRow[DevicesTable.name],
+                        role = if (isController) "Viewed" else "Was Viewed",
+                        status = row[SessionsTable.status],
+                        startedAt = row[SessionsTable.startedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000),
+                        endedAt = row[SessionsTable.endedAt]?.toEpochSecond(java.time.ZoneOffset.UTC)?.times(1000)
+                    )
+                }
+        }
+    }
 }

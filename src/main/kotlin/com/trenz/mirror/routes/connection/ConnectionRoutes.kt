@@ -79,6 +79,22 @@ fun Route.connectionRoutes(connectionService: ConnectionService) {
                     call.respond(HttpStatusCode.Forbidden, ApiResponse.Error("FORBIDDEN", e.message ?: "Not authorized"))
                 }
             }
+
+            get("/recent") {
+                val principal = call.principal<JWTPrincipal>()
+                val userId = principal?.payload?.getClaim("userId")?.asString()
+                    ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+                val deviceId = call.request.queryParameters["deviceId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, ApiResponse.Error("BAD_REQUEST", "Device ID required"))
+
+                try {
+                    val recent = connectionService.getRecentSessions(userId, deviceId)
+                    call.respond(HttpStatusCode.OK, ApiResponse.Success(recent))
+                } catch (e: ConnectionAuthorizationException) {
+                    call.respond(HttpStatusCode.Forbidden, ApiResponse.Error("FORBIDDEN", e.message ?: "Not authorized"))
+                }
+            }
         }
     }
 }
